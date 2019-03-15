@@ -1,3 +1,6 @@
+Added force torque sensor to gazebo simulation (in branch release-5.2.0). Requires sawyer_description repo (https://github.com/justagist/sawyer_robot) of the same branch.
+
+
 sawyer_simulator
 ================
 
