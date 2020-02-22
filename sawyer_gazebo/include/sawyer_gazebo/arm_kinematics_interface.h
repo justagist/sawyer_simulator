@@ -39,6 +39,8 @@
 #include <kdl/jntarray.hpp>
 #include <kdl/tree.hpp>
 #include <urdf/model.h>
+#include "kdl/chainfksolver.hpp"
+
 
 namespace sawyer_gazebo
 {
@@ -187,6 +189,12 @@ void jointCommandToGravityMsg(const std::vector<std::string>& joint_names,
                               const intera_core_msgs::JointCommand& command_msg,
                               intera_core_msgs::SEAJointState& gravity_msg);
 
+
+virtual int PosFKJntToCart(const Kinematics& kin, const KDL::JntArray& q_in, KDL::Frame& p_out, int segmentNr=-1);
+virtual int VelFKJntToCart(const Kinematics& kin, const KDL::JntArrayVel& in, KDL::FrameVel& out,int seg_nr);
+virtual int GravityCartToJnt(const Kinematics& kin, const KDL::JntArray &q, const KDL::JntArray &q_dot, const KDL::JntArray &q_dotdot, const KDL::Wrenches& f_ext,KDL::JntArray &torques);
 };
+
+
 }  // namespace sawyer_gazebo
 #endif  // SAWYER_GAZEBO_ARM_KINEMATICS_INTERFACE_H

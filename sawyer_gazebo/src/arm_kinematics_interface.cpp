@@ -41,6 +41,7 @@ bool ArmKinematicsInterface::init(ros::NodeHandle& nh, std::string side)
   joint_limits_ = retrieveJointLimits();
 
   // Init Solvers to default endpoint
+  // ROS_ERROR_NAMED("THIS",tip_name_.c_str());
   if (!createKinematicChain(tip_name_))
   {
     return false;
@@ -141,9 +142,11 @@ bool ArmKinematicsInterface::createKinematicChain(std::string tip_name)
     kin.joint_names.push_back(kin.chain.getSegment(seg_idx).getJoint().getName());
   }
   // Construct Solvers
-  kin.gravity_solver = std::make_unique<KDL::ChainIdSolver_RNE>(kin.chain, KDL::Vector(0.0, 0.0, -9.8));
-  kin.fk_pos_solver = std::make_unique<KDL::ChainFkSolverPos_recursive>(kin.chain);
-  kin.fk_vel_solver = std::make_unique<KDL::ChainFkSolverVel_recursive>(kin.chain);
+
+  // ROS_ERROR_NAMED("THIS", tip_name.c_str());
+  // kin.gravity_solver = std::make_unique<KDL::ChainIdSolver_RNE>(kin.chain, KDL::Vector(0.0, 0.0, -9.8));
+  // kin.fk_pos_solver = std::make_unique<KDL::ChainFkSolverPos_recursive>(kin.chain);
+  // kin.fk_vel_solver = std::make_unique<KDL::ChainFkSolverVel_recursive>(kin.chain);
   auto num_jnts = kin.joint_names.size();
   KDL::JntArray q_min(num_jnts);
   KDL::JntArray q_max(num_jnts);
@@ -337,6 +340,8 @@ void ArmKinematicsInterface::jointStateToKDL(const sensor_msgs::JointState& join
 {
   auto num_jnts = kin.joint_names.size();
   auto num_msg = joint_state.name.size();
+
+
   // Check to see if there are any values before allocating space
   if (!joint_state.position.empty())
   {
@@ -359,12 +364,18 @@ void ArmKinematicsInterface::jointStateToKDL(const sensor_msgs::JointState& join
     {
       if (joint_state.name[msg_idx] == kin.joint_names[jnt_idx])
       {
-        if (msg_idx < joint_state.position.size())
+        if (msg_idx < joint_state.position.size()){
           jnt_pos(jnt_idx) = joint_state.position[msg_idx];
-        if (msg_idx < joint_state.velocity.size())
+        // ROS_WARN_NAMED("pos","pos %d HERE %f",msg_idx,joint_state.position[msg_idx]);
+        }
+        if (msg_idx < joint_state.velocity.size()){
           jnt_vel(jnt_idx) = joint_state.velocity[msg_idx];
-        if (msg_idx < joint_state.effort.size())
+        // ROS_WARN_NAMED("vel","vel %d HERE %f",msg_idx,joint_state.velocity[msg_idx]);
+        }
+        if (msg_idx < joint_state.effort.size()){
           jnt_eff(jnt_idx) = joint_state.effort[msg_idx];
+        // ROS_WARN_NAMED("eff","eff %d HERE %f",msg_idx,joint_state.effort[msg_idx]);
+        }
         break;
       }
     }
@@ -404,7 +415,7 @@ bool ArmKinematicsInterface::servicePositionIK(intera_core_msgs::SolvePositionIK
     if (req.use_nullspace_goal.size() > i && req.use_nullspace_goal[i]){
       jointStatePositionToKDL(req.nullspace_goal[i],
           kinematic_chain_it->second, jnt_nullspace_bias);
-      if(req.nullspace_gain.size() > i)
+      if(req.nullspace_gain.size() > i)  // ROS_ERROR_NAMED("THIS", tip_name.c_str());
         kinematic_chain_it->second.ik_solver->setNullspaceGain(req.nullspace_gain[i]);
     }
     if (req.seed_mode == req.SEED_USER || req.seed_mode == req.SEED_AUTO)
@@ -500,21 +511,142 @@ bool ArmKinematicsInterface::computeGravity(const Kinematics& kin,
 {
   std::vector<KDL::Wrench> f_ext(kin.chain.getNrOfSegments(), KDL::Wrench::Zero());
   jnt_torques.resize(kin.chain.getNrOfJoints());
-  return !(kin.gravity_solver->CartToJnt(jnt_pos, jnt_vel, jnt_accel, f_ext, jnt_torques) < 0);
+  return !(GravityCartToJnt(kin, jnt_pos, jnt_vel, jnt_accel, f_ext, jnt_torques) < 0);
 }
+
+int ArmKinematicsInterface::GravityCartToJnt(const Kinematics& kin, const KDL::JntArray &q, const KDL::JntArray &q_dot, const KDL::JntArray &q_dotdot, const KDL::Wrenches& f_ext,KDL::JntArray &torques)
+    {
+
+        unsigned int j=0;
+
+        unsigned int nj = kin.chain.getNrOfJoints();
+        unsigned int ns = kin.chain.getNrOfSegments() ;// X(ns),S(ns),v(ns),a(ns),f(ns)
+        std::vector<KDL::Frame> X(ns);
+        std::vector<KDL::Twist> S(ns);
+        std::vector<KDL::Twist> v(ns);
+        std::vector<KDL::Twist> a(ns);
+        std::vector<KDL::Wrench> f(ns);
+        KDL::Twist ag=-KDL::Twist(KDL::Vector(0.0, 0.0, -9.8),KDL::Vector::Zero());
+        //Sweep from root to leaf
+        for(unsigned int i=0;i<ns;i++){
+            double q_,qdot_,qdotdot_;
+            if(kin.chain.getSegment(i).getJoint().getType()!=KDL::Joint::None){
+                q_=q(j);
+                qdot_=q_dot(j);
+                qdotdot_=q_dotdot(j);
+                j++;
+            }else
+                q_=qdot_=qdotdot_=0.0;
+            
+            //Calculate segment properties: X,S,vj,cj
+            X[i]=kin.chain.getSegment(i).pose(q_);//Remark this is the inverse of the 
+                                                //frame for transformations from 
+                                                //the parent to the current coord frame
+            //Transform velocity and unit velocity to segment frame
+            KDL::Twist vj=X[i].M.Inverse(kin.chain.getSegment(i).twist(q_,qdot_));
+            S[i]=X[i].M.Inverse(kin.chain.getSegment(i).twist(q_,1.0));
+            //We can take cj=0, see remark section 3.5, page 55 since the unit velocity vector S of our joints is always time constant
+            //calculate velocity and acceleration of the segment (in segment coordinates)
+            if(i==0){
+                v[i]=vj;
+                a[i]=X[i].Inverse(ag)+S[i]*qdotdot_+v[i]*vj;
+            }else{
+                v[i]=X[i].Inverse(v[i-1])+vj;
+                a[i]=X[i].Inverse(a[i-1])+S[i]*qdotdot_+v[i]*vj;
+            }
+            //Calculate the force for the joint
+            //Collect RigidBodyInertia and external forces
+            KDL::RigidBodyInertia Ii=kin.chain.getSegment(i).getInertia();
+            f[i]=Ii*a[i]+v[i]*(Ii*v[i])-f_ext[i];
+      //std::cout << "a[i]=" << a[i] << "\n f[i]=" << f[i] << "\n S[i]" << S[i] << std::endl;
+        }
+        //Sweep from leaf to root
+        j=nj-1;
+        for(int i=ns-1;i>=0;i--){
+            if(kin.chain.getSegment(i).getJoint().getType()!=KDL::Joint::None){
+                torques(j)=dot(S[i],f[i]);
+                torques(j)+=kin.chain.getSegment(i).getJoint().getInertia()*q_dotdot(j);  // add torque from joint inertia
+                --j;
+            }
+            if(i!=0)
+                f[i-1]=f[i-1]+X[i]*f[i];
+        }
+  return 0;
+    }
 
 bool ArmKinematicsInterface::computePositionFK(const Kinematics& kin,
                                                const KDL::JntArray& jnt_pos,
                                                geometry_msgs::Pose& result)
 {
+
   KDL::Frame p_out;
-  if (kin.fk_pos_solver->JntToCart(jnt_pos, p_out, kin.chain.getNrOfSegments()) < 0)
+
+  if (PosFKJntToCart(kin, jnt_pos, p_out, kin.chain.getNrOfSegments()) < 0)
   {
     return false;
   }
+
   tf::poseKDLToMsg(p_out, result);
   return true;
 }
+
+    int ArmKinematicsInterface::VelFKJntToCart(const Kinematics& kin, const KDL::JntArrayVel& in, KDL::FrameVel& out,int seg_nr)
+    {
+        unsigned int segmentNr;
+        if(seg_nr<0)
+            segmentNr=kin.chain.getNrOfSegments();
+        else
+            segmentNr = seg_nr;
+
+        out=KDL::FrameVel::Identity();
+
+        if(!(in.q.rows()==kin.chain.getNrOfJoints()&&in.qdot.rows()==kin.chain.getNrOfJoints()))
+            return -4;
+        else if(segmentNr>kin.chain.getNrOfSegments())
+            return -3;
+        else{
+            int j=0;
+            for (unsigned int i=0;i<segmentNr;i++) {
+                //Calculate new Frame_base_ee
+                if(kin.chain.getSegment(i).getJoint().getType()!=KDL::Joint::None){
+                    out=out*KDL::FrameVel(kin.chain.getSegment(i).pose(in.q(j)),
+                                     kin.chain.getSegment(i).twist(in.q(j),in.qdot(j)));
+                    j++;//Only increase jointnr if the segment has a joint
+                }else{
+                    out=out*KDL::FrameVel(kin.chain.getSegment(i).pose(0.0),
+                                     kin.chain.getSegment(i).twist(0.0,0.0));
+                }
+            }
+            return 0;
+        }
+    }
+
+  int ArmKinematicsInterface::PosFKJntToCart(const Kinematics& kin, const KDL::JntArray& q_in, KDL::Frame& p_out, int seg_nr)    {
+      unsigned int segmentNr;
+      if(seg_nr<0)
+          segmentNr=kin.chain.getNrOfSegments();
+      else
+          segmentNr = seg_nr;
+
+      p_out = KDL::Frame::Identity();
+      if(q_in.rows()!=kin.chain.getNrOfJoints()){
+          return -4;
+      }
+      else if(segmentNr>kin.chain.getNrOfSegments())
+          return -3;
+      else{
+          int j=0;
+          for(unsigned int i=0;i<segmentNr;i++){
+              if(kin.chain.getSegment(i).getJoint().getType()!=KDL::Joint::None){
+                  p_out = p_out*kin.chain.getSegment(i).pose(q_in(j));
+                  j++;
+              }else{
+                  p_out = p_out*kin.chain.getSegment(i).pose(0.0);
+              }
+          }
+          return 0;
+      }
+  }
 
 
 bool ArmKinematicsInterface::computePositionIK(const Kinematics& kin,
@@ -532,27 +664,13 @@ bool ArmKinematicsInterface::computeVelocityFK(const Kinematics& kin,
                                                geometry_msgs::Twist& result)
 {
   KDL::FrameVel v_out;
-  if (kin.fk_vel_solver->JntToCart(jnt_vel, v_out, kin.chain.getNrOfSegments()) < 0)
+  if (VelFKJntToCart(kin, jnt_vel, v_out, kin.chain.getNrOfSegments()) < 0)
   {
     return false;
   }
   tf::twistKDLToMsg(v_out.GetTwist(), result);
   return true;
 }
-/* TODO(imcmahon): once ChainFDSolverTau is upstreamed
-bool ArmKinematicsInterface::computeEffortFK(const Kinematics& kin,
-                                             const KDL::JntArray& jnt_pos,
-                                             const KDL::JntArray& jnt_eff,
-                                             geometry_msgs::Wrench& result)
-{
-  KDL::Wrench wrench;
-  if (kin.fk_eff_solver->JntToCart(jnt_pos, jnt_eff, wrench) < 0)
-  {
-    return false;
-  }
-  tf::wrenchKDLToMsg(wrench, result);
-  return true;
-} */
 
 void ArmKinematicsInterface::publishEndpointState()
 {
@@ -593,6 +711,7 @@ void ArmKinematicsInterface::publishEndpointState()
     endpoint_states.header.frame_id = root_name_;
     endpoint_states.header.stamp = ros::Time::now();
     tip_state_pub_.publish(endpoint_states);
+     // ROS_WARN_NAMED("this","HELLO?!");
   }
 }
 
