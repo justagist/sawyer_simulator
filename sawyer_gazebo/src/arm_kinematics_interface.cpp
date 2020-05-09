@@ -89,7 +89,7 @@ intera_core_msgs::JointLimits ArmKinematicsInterface::retrieveJointLimits()
   for (const auto& kv : tree_.getSegments())
   {
     auto jnt = kv.second.segment.getJoint();
-    if (jnt.getTypeName() == "None" || jnt.getTypeName() == "Unknown")
+    if (jnt.getTypeName() == "None" || jnt.getTypeName() == "Unknown" || jnt.getTypeName() == "Fixed")
       continue;
     auto joint_name = kv.second.segment.getJoint().getName();
     auto joint_limits_ptr = robot_model_.getJoint(joint_name)->limits;
@@ -137,7 +137,7 @@ bool ArmKinematicsInterface::createKinematicChain(std::string tip_name)
   for (size_t seg_idx = 0; seg_idx < kin.chain.getNrOfSegments(); seg_idx++)
   {
     const auto& jnt = kin.chain.getSegment(seg_idx).getJoint();
-    if (jnt.getTypeName() == "None" || jnt.getTypeName() == "Unknown")
+    if (jnt.getTypeName() == "None" || jnt.getTypeName() == "Unknown" || jnt.getTypeName() == "Fixed")
       continue;
     kin.joint_names.push_back(kin.chain.getSegment(seg_idx).getJoint().getName());
   }
@@ -530,7 +530,7 @@ int ArmKinematicsInterface::GravityCartToJnt(const Kinematics& kin, const KDL::J
         //Sweep from root to leaf
         for(unsigned int i=0;i<ns;i++){
             double q_,qdot_,qdotdot_;
-            if(kin.chain.getSegment(i).getJoint().getType()!=KDL::Joint::None){
+            if(kin.chain.getSegment(i).getJoint().getType()!=KDL::Joint::Fixed){
                 q_=q(j);
                 qdot_=q_dot(j);
                 qdotdot_=q_dotdot(j);
@@ -563,7 +563,7 @@ int ArmKinematicsInterface::GravityCartToJnt(const Kinematics& kin, const KDL::J
         //Sweep from leaf to root
         j=nj-1;
         for(int i=ns-1;i>=0;i--){
-            if(kin.chain.getSegment(i).getJoint().getType()!=KDL::Joint::None){
+            if(kin.chain.getSegment(i).getJoint().getType()!=KDL::Joint::Fixed){
                 torques(j)=dot(S[i],f[i]);
                 torques(j)+=kin.chain.getSegment(i).getJoint().getInertia()*q_dotdot(j);  // add torque from joint inertia
                 --j;
@@ -608,7 +608,7 @@ bool ArmKinematicsInterface::computePositionFK(const Kinematics& kin,
             int j=0;
             for (unsigned int i=0;i<segmentNr;i++) {
                 //Calculate new Frame_base_ee
-                if(kin.chain.getSegment(i).getJoint().getType()!=KDL::Joint::None){
+                if(kin.chain.getSegment(i).getJoint().getType()!=KDL::Joint::Fixed){
                     out=out*KDL::FrameVel(kin.chain.getSegment(i).pose(in.q(j)),
                                      kin.chain.getSegment(i).twist(in.q(j),in.qdot(j)));
                     j++;//Only increase jointnr if the segment has a joint
@@ -637,7 +637,7 @@ bool ArmKinematicsInterface::computePositionFK(const Kinematics& kin,
       else{
           int j=0;
           for(unsigned int i=0;i<segmentNr;i++){
-              if(kin.chain.getSegment(i).getJoint().getType()!=KDL::Joint::None){
+              if(kin.chain.getSegment(i).getJoint().getType()!=KDL::Joint::Fixed){
                   p_out = p_out*kin.chain.getSegment(i).pose(q_in(j));
                   j++;
               }else{
