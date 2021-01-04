@@ -530,7 +530,7 @@ int ArmKinematicsInterface::GravityCartToJnt(const Kinematics& kin, const KDL::J
         //Sweep from root to leaf
         for(unsigned int i=0;i<ns;i++){
             double q_,qdot_,qdotdot_;
-            if(kin.chain.getSegment(i).getJoint().getType()!=KDL::Joint::Fixed){
+            if(kin.chain.getSegment(i).getJoint().getType()!=KDL::Joint::None){
                 q_=q(j);
                 qdot_=q_dot(j);
                 qdotdot_=q_dotdot(j);
@@ -563,7 +563,7 @@ int ArmKinematicsInterface::GravityCartToJnt(const Kinematics& kin, const KDL::J
         //Sweep from leaf to root
         j=nj-1;
         for(int i=ns-1;i>=0;i--){
-            if(kin.chain.getSegment(i).getJoint().getType()!=KDL::Joint::Fixed){
+            if(kin.chain.getSegment(i).getJoint().getType()!=KDL::Joint::None){
                 torques(j)=dot(S[i],f[i]);
                 torques(j)+=kin.chain.getSegment(i).getJoint().getInertia()*q_dotdot(j);  // add torque from joint inertia
                 --j;
@@ -608,7 +608,7 @@ bool ArmKinematicsInterface::computePositionFK(const Kinematics& kin,
             int j=0;
             for (unsigned int i=0;i<segmentNr;i++) {
                 //Calculate new Frame_base_ee
-                if(kin.chain.getSegment(i).getJoint().getType()!=KDL::Joint::Fixed){
+                if(kin.chain.getSegment(i).getJoint().getType()!=KDL::Joint::None){
                     out=out*KDL::FrameVel(kin.chain.getSegment(i).pose(in.q(j)),
                                      kin.chain.getSegment(i).twist(in.q(j),in.qdot(j)));
                     j++;//Only increase jointnr if the segment has a joint
@@ -637,7 +637,7 @@ bool ArmKinematicsInterface::computePositionFK(const Kinematics& kin,
       else{
           int j=0;
           for(unsigned int i=0;i<segmentNr;i++){
-              if(kin.chain.getSegment(i).getJoint().getType()!=KDL::Joint::Fixed){
+              if(kin.chain.getSegment(i).getJoint().getType()!=KDL::Joint::None){
                   p_out = p_out*kin.chain.getSegment(i).pose(q_in(j));
                   j++;
               }else{
